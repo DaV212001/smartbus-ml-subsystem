@@ -26,8 +26,12 @@ COPY src/ /app/src/
 # Create folders for data and model persistence inside container
 RUN mkdir -p /app/data /app/models
 
-# Expose port 8000 for external traffic
+# Bake synthetic data + trained models into the image so the container is
+# fully self-contained at boot — no first-run /train call needed on Render.
+RUN python -m src.train
+
+# Expose port 8000 for external traffic (Render injects $PORT and overrides this)
 EXPOSE 8000
 
-# Run FastAPI using uvicorn server on container startup
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run FastAPI using uvicorn — honor $PORT so platforms like Render can rebind dynamically
+CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
