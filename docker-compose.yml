@@ -17,6 +17,7 @@ services:
       - TRAINING_SAMPLE_SIZE=2500
       - FRAUD_SAMPLE_SIZE=6000
       - ANOMALY_CONTAMINATION=0.05
+      - ML_INTERNAL_TOKEN=${ML_INTERNAL_TOKEN:-}
     volumes:
       # Bind mounts to persist generated synthetic CSVs and trained model binaries on the host machine
       - ./data:/app/data
