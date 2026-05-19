@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  smartbus-ml:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartbus-ml-subsystem
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - ENV=production
+      - DATA_DIR=/app/data
+      - MODELS_DIR=/app/models
+      - TRAINING_SAMPLE_SIZE=2500
+      - FRAUD_SAMPLE_SIZE=6000
+      - ANOMALY_CONTAMINATION=0.05
+    volumes:
+      # Bind mounts to persist generated synthetic CSVs and trained model binaries on the host machine
+      - ./data:/app/data
+      - ./models:/app/models
+    restart: always
+
+  # NestJS and other services would be placed here in the main docker-compose file:
+  # api-gateway (NestJS):
+  #   build: ./nest-backend
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - ML_SERVICE_URL=http://smartbus-ml:8000
+  #   depends_on:
+  #     - smartbus-ml
