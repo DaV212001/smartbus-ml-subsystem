@@ -153,3 +153,42 @@ export class ValidationService {
 
 ## 🛡️ Robust Graceful Degradation Heuristic
 If the Python ML microservice becomes unreachable or timed out (1.5-second hard limit), the `SmartBusMlService` handles the failure gracefully. It invokes a **local database aggregation/TS rules fallback** (pre-coded in `smartbus-ml.service.ts`), providing full operational resilience for active bus boarding gates.
+
+---
+
+## 🚀 Render Deployment Guide
+
+To deploy this Python FastAPI microservice to **Render** alongside your NestJS application, follow these steps:
+
+### Step 1: Create a New Web Service on Render
+1. Connect your GitHub repository to your Render dashboard.
+2. Select the repository containing this microservice (`smartbus-ml-subsystem`).
+3. Set the following basic parameters:
+   * **Runtime:** `Python 3` (or choose Docker if utilizing the provided `Dockerfile`).
+   * **Build Command:**
+     ```bash
+     pip install -r requirements.txt && python -m src.train
+     ```
+     > [!IMPORTANT]
+     > Running `python -m src.train` during the build step ensures that your synthetic datasets are generated and the trained ML models are baked directly into the immutable deployment slug. This avoids model loading errors on startup and preserves models across Render container restarts.
+   * **Start Command:**
+     ```bash
+     uvicorn src.main:app --host 0.0.0.0 --port $PORT
+     ```
+
+### Step 2: Configure Environment Variables on Render
+Add the following key-value pairs in the **Environment** tab:
+* `PORT`: `8000` (Render will override this dynamically for routing, but it ensures standard fallback bindings).
+* `ENV`: `production`
+* `TRAINING_SAMPLE_SIZE`: `2000`
+* `FRAUD_SAMPLE_SIZE`: `5000`
+
+### Step 3: Link NestJS Backend to Render Service
+Once Render assigns your FastAPI web service a public URL (e.g., `https://smartbus-ml.onrender.com`), configure your NestJS environment to route calls to it:
+
+1. Update the `.env` configuration file in your **NestJS repository**:
+   ```env
+   ML_SERVICE_URL=https://smartbus-ml.onrender.com
+   ```
+2. Redeploy or restart your NestJS service. The NestJS HTTP adapter will now communicate directly with your live Render-hosted ML engine.
+
