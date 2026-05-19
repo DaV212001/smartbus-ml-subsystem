@@ -46,7 +46,7 @@ export class MlModule {}
 4. **Register the module** in your main `src/app.module.ts`:
    Add `MlModule` to the `imports: [...]` array of your core module.
 
-5. **Set the environment variable** in your NestJS `.env` file:
+5. **Set the local environment variable** in your NestJS `.env` file (for local development and testing):
    ```env
    ML_SERVICE_URL=http://localhost:8000
    ```
@@ -183,12 +183,12 @@ Add the following key-value pairs in the **Environment** tab:
 * `TRAINING_SAMPLE_SIZE`: `2000`
 * `FRAUD_SAMPLE_SIZE`: `5000`
 
-### Step 3: Link NestJS Backend to Render Service
-Once Render assigns your FastAPI web service a public URL (e.g., `https://smartbus-ml.onrender.com`), configure your NestJS environment to route calls to it:
+### Step 3: Link NestJS Backend to Render Service (Production)
+Once Render assigns your FastAPI web service a public URL (e.g., `https://smartbus-ml.onrender.com`), configure your production NestJS environment to point to it:
 
-1. Update the `.env` configuration file in your **NestJS repository**:
+1. Update the `.env` configuration file in your **deployed production NestJS repository**:
    ```env
    ML_SERVICE_URL=https://smartbus-ml.onrender.com
    ```
-2. Redeploy or restart your NestJS service. The NestJS HTTP adapter will now communicate directly with your live Render-hosted ML engine.
+2. Redeploy or restart your production NestJS service. The NestJS HTTP adapter will now communicate directly with your live Render-hosted ML engine.
 
