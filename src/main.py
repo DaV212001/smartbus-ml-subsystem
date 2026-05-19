@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, HTTPException, BackgroundTasks, status
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from src import config, features, train
 
@@ -14,6 +15,25 @@ app = FastAPI(
     description="Academically complete ML microservice providing Route Driver Suggestions and Ticketing Scan Anomaly/Fraud Detection.",
     version="1.0.0"
 )
+
+# ─── Shared-secret authentication ─────────────────────────────────────────────
+# When ML_INTERNAL_TOKEN is set, every request (except /health) must carry a
+# matching X-Internal-Token header. Used to keep the public Render URL closed
+# to anyone but the SmartBus NestJS backend.
+_INTERNAL_TOKEN = os.environ.get("ML_INTERNAL_TOKEN", "").strip()
+
+@app.middleware("http")
+async def require_internal_token(request: Request, call_next):
+    # Health checks must remain open so Render's load balancer can probe.
+    if not _INTERNAL_TOKEN or request.url.path == "/health":
+        return await call_next(request)
+    provided = request.headers.get("X-Internal-Token", "")
+    if provided != _INTERNAL_TOKEN:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing or invalid X-Internal-Token header"},
+        )
+    return await call_next(request)
 
 # Global variables for models and data tables loaded in-memory
 models_and_data: Dict[str, Any] = {}
