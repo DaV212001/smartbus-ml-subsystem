@@ -168,14 +168,25 @@ def train_scan_fraud_model():
         feature_rows.append(feats)
         
     feature_df = pd.DataFrame(feature_rows)
-    feature_cols = list(feature_df.columns)
+    
+    # Exclude deterministic binary flags from the Isolation Forest to prevent zero-variance scale dilution.
+    # Isolation Forest is specialized strictly for multi-dimensional contextual outlier behavior.
+    feature_cols = [
+        "sync_delay_seconds",
+        "is_offline",
+        "geo_distance_deviation_meters",
+        "passenger_scan_frequency",
+        "device_scan_frequency",
+        "scan_hour",
+        "scans_per_minute"
+    ]
     
     # Add target labels back for splits/evaluations
     feature_df["is_fraudulent"] = df_scans["is_fraudulent"]
     
     # 3. Filter normal scans for training
     # Isolation Forest is trained on NORMAL patterns, learning to identify the bounds of valid boarding scans.
-    normal_scans = feature_df[feature_df["is_fraudulent"] == 0].drop(columns=["is_fraudulent"])
+    normal_scans = feature_df[feature_df["is_fraudulent"] == 0][feature_cols]
     
     print(f"Training on {len(normal_scans)} normal ticket scans. Total dataset size: {len(feature_df)}")
     
@@ -197,8 +208,8 @@ def train_scan_fraud_model():
     print("Fitting Isolation Forest model...")
     iso_forest.fit(scaled_normal_scans)
     
-    # 6. Evaluate Model on Full Dataset (Normal + Fraud cases)
-    X_full = feature_df.drop(columns=["is_fraudulent"])
+    # 6. Evaluate Model on Full Dataset using Hybrid Detector (ML + Deterministic Rules)
+    X_full = feature_df[feature_cols]
     y_full = feature_df["is_fraudulent"]
     
     scaled_full = scaler.transform(X_full)
@@ -207,23 +218,59 @@ def train_scan_fraud_model():
     raw_scores = iso_forest.decision_function(scaled_full)
     
     # Convert decision score to a 0.0 - 1.0 confidence/fraud score
-    # Standard decision scores range from -0.5 to 0.5 where 0 is the outlier threshold.
-    # We will map this: high score = low fraud, low score = high fraud.
-    # Simple sigmoid or min-max mapping based on standard isolation forest boundaries
-    # Let's map decision scores < 0 (anomalies) to the 0.5 - 1.0 range, and > 0 to 0.0 - 0.5
     anomaly_scores = 1.0 - (1.0 / (1.0 + np.exp(-raw_scores * 8.0)))
+    
+    # Replicate Hybrid Detector logic: Combine rules and ML scores
+    hybrid_anomaly_scores = []
+    for idx, row in df_scans.iterrows():
+        rule_fraud_score = 0.0
+        
+        # Rule A: Cryptographic signature
+        if not row["qr_signature_valid"] or row["result"] == "INVALID_SIGNATURE":
+            rule_fraud_score = max(rule_fraud_score, 1.0)
+            
+        # Rule B: Direct duplicate reuse
+        if row["result"] == "ALREADY_USED":
+            rule_fraud_score = max(rule_fraud_score, 1.0)
+            
+        # Rule C: Expired Ticket boarding
+        if row["result"] == "EXPIRED":
+            rule_fraud_score = max(rule_fraud_score, 0.95)
+            
+        # Rule D: GPS distance deviation (caught by rule if large)
+        geo_deviation = row["geo_distance_deviation_meters"]
+        if geo_deviation > 600.0:
+            rule_fraud_score = max(rule_fraud_score, 0.85)
+            
+        # Rule E: Rolling counts burst
+        p_freq = row["passenger_scan_frequency"]
+        d_freq = row["device_scan_frequency"]
+        if p_freq >= 4:
+            rule_fraud_score = max(rule_fraud_score, 0.75)
+        if d_freq >= 20:
+            rule_fraud_score = max(rule_fraud_score, 0.70)
+            
+        # Rule F: Offline sync delay
+        if row["is_offline"] and row["sync_delay_seconds"] > 172800:
+            rule_fraud_score = max(rule_fraud_score, 0.80)
+            
+        ml_score = anomaly_scores[idx]
+        final_score = float(max(rule_fraud_score, ml_score))
+        hybrid_anomaly_scores.append(final_score)
+        
+    hybrid_anomaly_scores = np.array(hybrid_anomaly_scores)
     
     # Compute metrics
     # If we classify anything with anomaly_score > 0.5 as fraud:
-    y_pred_fraud = (anomaly_scores > 0.5).astype(int)
+    y_pred_fraud = (hybrid_anomaly_scores > 0.5).astype(int)
     
-    auc = roc_auc_score(y_full, anomaly_scores)
+    auc = roc_auc_score(y_full, hybrid_anomaly_scores)
     prec = precision_score(y_full, y_pred_fraud)
     rec = recall_score(y_full, y_pred_fraud)
     f1 = f1_score(y_full, y_pred_fraud)
     cm = confusion_matrix(y_full, y_pred_fraud)
     
-    print(f"\nUnsupervised Fraud Detection Performance Metrics (Full Set):")
+    print(f"\nHybrid Fraud Detection Performance Metrics (Full Set):")
     print(f"  Anomaly ROC-AUC Score: {auc:.4f}")
     print(f"  Precision (Score > 0.5): {prec:.4f}")
     print(f"  Recall (Score > 0.5):    {rec:.4f}")
